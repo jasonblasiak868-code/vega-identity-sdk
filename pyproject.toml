@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vega-identity-sdk"
+version = "0.1.0"
+description = "Who is at the door: password, one-time codes with QR set-up, phone codes, voice/biometric match, questions built from the user's own knowledge graph, and the assurance level each action needs."
+requires-python = ">=3.10"
+dependencies = ["cryptography>=42", "vega-custody-sdk", "vega-governance-jacket-sdk"]
+license = {file = "LICENSE"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
