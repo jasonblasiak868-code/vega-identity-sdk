@@ -9,7 +9,7 @@ Spec v1.0 — 2026-10-19 — describes the published reference implementation as
 | **Version** | 0.1.0 |
 | **Python** | >=3.10 |
 | **Dependencies** | `cryptography>=42`, `vega-custody-sdk`, `vega-governance-jacket-sdk` |
-| **Tests** | 56 tests in 2 files, all passing |
+| **Tests** | 67 tests in 3 files, all passing |
 | **Status** | **BUILT** (all 7 modules); designed-only: account recovery, speaker-recognition model, network layer |
 | **Layer** | 1 (authority) — extends `vega-governance-jacket-sdk` with factor verification |
 
@@ -385,7 +385,7 @@ A third party can verify conformance by running the test suite:
 PYTHONPATH=src:../vega-custody-sdk/src:../vega-governance-jacket-sdk/src python -m unittest tests/redteam_1_factors.py tests/redteam_2_service.py
 ```
 
-Expected: 56 tests pass (39 + 17). Mutation test (`tests/mutations_identity.py`) should kill all but 3 known survivors (phone user binding — MAC covers user; knowledge topics — test non-deterministic; QR alignment patterns — no decoder test).
+Expected: 67 tests pass (40 + 17 + 10). Mutation test (`tests/mutations_identity.py`) should kill all but 3 known survivors (phone user binding — MAC covers user; knowledge topics — test non-deterministic; QR alignment patterns — no decoder test).
 
 > **Passing means:** the published reference implementation behaves as specified.  
 > **Passing does NOT mean:** production ready, independently security-reviewed, crypto expert-reviewed, resistant to side-channels beyond those tested, or suitable for protecting real secrets without further review.

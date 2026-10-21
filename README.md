@@ -13,7 +13,7 @@
 | **Version** | 0.1.0 |
 | **Python** | >=3.10 |
 | **Dependencies** | `cryptography>=42`, `vega-custody-sdk`, `vega-governance-jacket-sdk` |
-| **Tests** | 56 tests in 2 files, all passing |
+| **Tests** | 67 tests in 3 files, all passing |
 | **Status** | **BUILT** (all 7 modules); designed-only: account recovery, speaker-recognition model, network layer |
 | **Layer** | 1 (authority) — extends `vega-governance-jacket-sdk` with factor verification |
 | **Platform** | Windows, macOS, Linux (pure Python); voice factor hardware-dependent |
@@ -42,7 +42,7 @@ The kit owns exactly one concern: verifying a person's presence through multiple
 1. **Enrol** — Create a user record with a password (scrypt + optional pepper). The chain records `ID_ENROLLED` with a keyed hash of the username; no secrets touch the chain.
 2. **Add factors** — Confirm TOTP (with QR), set phone (E.164), enrol device key (Ed25519), enrol voice (4+ audio samples), feed knowledge questions from private DKG sources.
 3. **Login** — Obtain a `Login` handle. Each factor method (`password`, `totp`, `phone_start`/`phone_check`, `device_challenge`/`device_key`, `voice_challenge`/`voice_verify`, `knowledge_start`/`knowledge_finish`) returns `True` only on success.
-4. **Record** — Every success writes `ID_FACTOR_OK` to the chain; every failure writes `ID_FACTOR_FAIL` and increments a per-person counter. Five failures lock the account (1 min, then doubling to 1 day). Unknown users get the same timing and the same "no" — no enumeration.
+4. **Record** — Every success writes `ID_FACTOR_OK` to the chain; every failure writes `ID_FACTOR_FAIL` and increments a per-person counter. Five failures lock the account (1 min, then doubling to 1 day). Unknown users get the same timing and the same "no" — no enumeration. Failures older than 15 minutes stop counting, passing one factor does NOT clear the count, and one person's attempts run one at a time, so a burst of parallel guesses is counted exactly.
 5. **Assert** — Call `assertion()` to get a signed, short-lived assertion (`level`, `families`, `used` factors, `expiry`). The chain records `ID_ASSERTION`. If the chain write fails, the assertion is refused.
 
 ## Controls

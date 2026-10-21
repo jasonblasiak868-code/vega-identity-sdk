@@ -10,7 +10,7 @@
 - assurance
 - service
 
-Tests: 56 tests in 2 files, all passing.
+Tests: 67 tests in 3 files, all passing.
 
 ## DESIGNED ONLY (not built)
 

@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import re
 import secrets
+import threading
 import time
 
 _E164 = re.compile(r"^\+[1-9][0-9]{7,14}$")
@@ -37,6 +38,7 @@ class PhoneChallenges:
             raise PhoneRefused("parameter out of range")
         self._send, self._pepper, self._clock = send, bytes(pepper), clock
         self.ttl, self.max_attempts, self.max_sends, self.window, self.digits, self.max_open = ttl, max_attempts, max_sends, window, digits, max_open
+        self._lock = threading.RLock()                               # sends and checks run one at a time: the send limit and the attempt limit hold in parallel
         self._open = {}                                              # id -> {user, mac, expiry, attempts}
         self._sends = {}                                             # number hash -> [timestamps]
 
@@ -47,6 +49,10 @@ class PhoneChallenges:
         return hmac.new(self._pepper, b"NUM|" + number.encode("ascii"), hashlib.sha256).hexdigest()
 
     def start(self, user: str, number: str) -> str:
+        with self._lock:
+            return self._start(user, number)
+
+    def _start(self, user: str, number: str) -> str:
         if self._send is None:
             raise PhoneRefused("no delivery is configured: the caller must supply send(number, text)")
         if not isinstance(user, str) or not user or "|" in user:
@@ -73,6 +79,10 @@ class PhoneChallenges:
         return cid
 
     def check(self, cid: str, user: str, code) -> bool:
+        with self._lock:
+            return self._check(cid, user, code)
+
+    def _check(self, cid: str, user: str, code) -> bool:
         v = self._open.get(cid) if isinstance(cid, str) else None
         if v is None or self._clock() >= v["expiry"] or v["user"] != user:
             return False

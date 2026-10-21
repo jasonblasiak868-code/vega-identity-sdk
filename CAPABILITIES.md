@@ -5,7 +5,7 @@
 | Item | Value |
 |------|-------|
 | **Capabilities documented** | 7 (one per module) |
-| **Test coverage** | 56 tests (39 factor tests + 17 service tests) |
+| **Test coverage** | 67 tests (40 factor tests + 17 service tests + 10 regression tests) |
 | **Mutation survival** | 3/55 (phone user binding, knowledge topics, QR alignment) |
 | **Layer** | 1 (authority) |
 

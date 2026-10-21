@@ -3,17 +3,22 @@
   Identity(dag, secret, pepper, vault_key, send=None, voice=None)      secret: 32+ bytes that sign assertions; pepper: 16+ bytes for hashes; vault_key: 32 bytes for biometric templates
   enrol / begin_totp_setup / confirm_totp / set_phone / enrol_device_key / enrol_voice / knowledge_bank     set-up (a factor counts only once it is confirmed)
   login(user) -> Login    .password .totp .phone_start/.phone_check .device_challenge/.device_key .voice_challenge/.voice_verify .knowledge_start .assertion
-EVERY failed factor counts against ONE per-person counter; five failures lock the account for a minute, doubling each time up to a day. A locked or unknown person gets the same plain 'no'
+EVERY failed factor counts against ONE per-person counter; five failures lock the account for a minute, doubling each time up to a day. Passing one factor does NOT clear the counter
+(that would let someone who knows the password alternate clears with second-factor guesses); failures stop counting after FAIL_WINDOW (15 minutes) without a new one. The attempts of one
+person run one at a time, so a burst of parallel guesses is counted exactly and cannot all be evaluated before the lock lands. A locked or unknown person gets the same plain 'no'
 as a wrong answer, so nobody can use the service to learn who has an account; unknown people still cost the attacker the same hashing time.
 THE CHAIN gets event kinds ID_ENROLLED, ID_FACTOR_OK, ID_FACTOR_FAIL, ID_LOCKED, ID_ASSERTION with a keyed hash of the user name, the factor name and the level: never a password, a code, an
 answer, a phone number, an audio sample or a template. If the chain cannot be written, a success is refused (the record comes first).
 HONEST LIMITS: state lives in this object; the caller must keep it (and the secrets) in an encrypted store; there is no network layer, no session cookie, no account recovery (recovery is the
 dangerous part of any identity system and needs its own design and a human in the loop). The device-key factor proves possession of a private key by signing a fresh challenge; where that key lives
 (a TPM, a hardware token) decides how strong it is."""
+import contextlib
+import functools
 import hashlib
 import hmac
 import re
 import secrets
+import threading
 import time
 
 from cryptography.exceptions import InvalidSignature
@@ -24,6 +29,7 @@ from vega_identity import assurance, knowledge, password as pw, phone as phonemo
 
 USER = re.compile(r"^[a-z0-9][a-z0-9._-]{2,39}$")
 MAX_FAILS, QUIZ_STARTS_PER_HOUR = 5, 3
+FAIL_WINDOW = 15 * 60          # failures older than this no longer count toward a lock
 
 
 class IdentityRefused(ValueError):
@@ -38,6 +44,8 @@ class Identity:
         self.phones = phonemod.PhoneChallenges(send=send, pepper=bytes(pepper), clock=clock)
         self.voice = voice if voice is not None else biometric.VoiceFactor(biometric.TemplateVault(vault_key), clock=clock)
         self.users = {}
+        self._lock = threading.RLock()                       # set-up operations (enrol and the rest) run one at a time
+        self._locks = {}                                     # user -> lock: that person's factor attempts run one at a time
         self._dummy = pw.hash_password("dummy-password-for-timing-only", self._pepper, n=scrypt_n, check_strength=False)
 
     # ---- helpers ------------------------------------------------------------------------------------------------
@@ -54,7 +62,15 @@ class Identity:
     def _locked(self, u) -> bool:
         return self._clock() < u["locked_until"]
 
+    def _user_lock(self, user):
+        with self._lock:
+            return self._locks.get(user) if isinstance(user, str) else None
+
     def _fail(self, user, u, factor) -> None:
+        now = self._clock()
+        if now - u.get("fail_at", 0.0) > FAIL_WINDOW:        # old failures stop counting; a success on another factor does not clear them
+            u["fails"] = 0
+        u["fail_at"] = now
         u["fails"] += 1
         self._event("ID_FACTOR_FAIL", user, factor=factor)
         if u["fails"] >= MAX_FAILS:
@@ -67,13 +83,15 @@ class Identity:
     def enrol(self, user: str, password: str) -> None:
         if not isinstance(user, str) or not USER.fullmatch(user):
             raise IdentityRefused("user names are 3 to 40 lowercase letters, digits, '.', '_' or '-'")
-        if user in self.users:
-            raise IdentityRefused("that user already exists")
-        rec = pw.hash_password(password, self._pepper, n=self._n, user=user)
-        if not self._event("ID_ENROLLED", user):
-            raise IdentityRefused("the chain could not be written: nothing was enrolled")
-        self.users[user] = {"password": rec, "totp": None, "totp_pending": None, "last_counter": -1, "phone": None, "device_pub": None, "voice": None, "bank": None,
-                            "fails": 0, "lock_count": 0, "locked_until": 0.0, "quiz_starts": []}
+        rec = pw.hash_password(password, self._pepper, n=self._n, user=user)        # the slow part runs outside the lock
+        with self._lock:                                      # 'does it exist?', the record and the new account are one step
+            if user in self.users:
+                raise IdentityRefused("that user already exists")
+            if not self._event("ID_ENROLLED", user):
+                raise IdentityRefused("the chain could not be written: nothing was enrolled")
+            self.users[user] = {"password": rec, "totp": None, "totp_pending": None, "last_counter": -1, "phone": None, "device_pub": None, "voice": None, "bank": None,
+                                "fails": 0, "fail_at": 0.0, "lock_count": 0, "locked_until": 0.0, "quiz_starts": []}
+            self._locks[user] = threading.RLock()
 
     def _u(self, user):
         u = self.users.get(user) if isinstance(user, str) else None
@@ -120,6 +138,16 @@ class Identity:
         return Login(self, user)
 
 
+def _attempt(fn):
+    """One person's factor attempts run one at a time (the lock is the person's, so different people do not wait for each other)."""
+    @functools.wraps(fn)
+    def inner(self, *a, **k):
+        lk = self.svc._user_lock(self.user)
+        with (lk if lk is not None else contextlib.nullcontext()):
+            return fn(self, *a, **k)
+    return inner
+
+
 class Login:
     def __init__(self, svc: Identity, user: str):
         self.svc, self.user = svc, user
@@ -133,8 +161,7 @@ class Login:
     def _pass(self, factor) -> bool:
         if not self.svc._event("ID_FACTOR_OK", self.user, factor=factor):
             return False                                            # the record comes first
-        self.passed[factor] = self.svc._clock()
-        self.u["fails"] = 0
+        self.passed[factor] = self.svc._clock()                      # the failure counter is NOT cleared here: one right factor must not buy more guesses at the others
         return True
 
     def _no(self, factor) -> bool:
@@ -142,6 +169,7 @@ class Login:
             self.svc._fail(self.user, self.u, factor)
         return False
 
+    @_attempt
     def password(self, text) -> bool:
         rec = self.u["password"] if self.u is not None else self.svc._dummy
         ok = pw.verify_password(text, rec, self.svc._pepper)         # unknown users cost the same time
@@ -149,6 +177,7 @@ class Login:
             return self._pass("password")
         return self._no("password")
 
+    @_attempt
     def totp(self, code) -> bool:
         if not self._live() or not self.u["totp"]:
             return self._no("totp")
@@ -158,6 +187,7 @@ class Login:
             return self._pass("totp")
         return self._no("totp")
 
+    @_attempt
     def phone_start(self) -> bool:
         if not self._live() or not self.u["phone"]:
             return False
@@ -167,6 +197,7 @@ class Login:
         except phonemod.PhoneRefused:
             return False
 
+    @_attempt
     def phone_check(self, code) -> bool:
         if self._live() and self._phone_cid and self.svc.phones.check(self._phone_cid, self.user, code):
             self._phone_cid = None
@@ -177,6 +208,7 @@ class Login:
         self._device_nonce = secrets.token_bytes(32) if self._live() and self.u["device_pub"] else None
         return self._device_nonce
 
+    @_attempt
     def device_key(self, signature: bytes) -> bool:
         nonce, self._device_nonce = self._device_nonce, None         # single use
         if self._live() and nonce and self.u["device_pub"]:
@@ -193,6 +225,7 @@ class Login:
         self._voice_cid, phrase = self.svc.voice.liveness.challenge()
         return phrase
 
+    @_attempt
     def voice_verify(self, audio) -> bool:
         if self._live() and self.u["voice"] and self._voice_cid:
             cid, self._voice_cid = self._voice_cid, None
@@ -200,6 +233,7 @@ class Login:
                 return self._pass("voice")
         return self._no("voice")
 
+    @_attempt
     def knowledge_start(self):
         if not self._live() or self.u["bank"] is None or not self.u["bank"].available():
             return None
@@ -211,6 +245,7 @@ class Login:
         self._quiz = self.u["bank"].start_quiz()
         return self._quiz.questions()
 
+    @_attempt
     def knowledge_finish(self, answers: dict) -> bool:
         quiz, self._quiz = self._quiz, None
         if quiz is None or not self._live() or not isinstance(answers, dict):
