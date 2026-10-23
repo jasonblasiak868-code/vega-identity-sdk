@@ -16,6 +16,7 @@ console should be willing to use it."""
 import hashlib
 import hmac
 import json
+import re
 import secrets
 import time
 
@@ -55,10 +56,11 @@ def required_level(action) -> int:
     if humanauth.is_human_only(action):
         return 4
     a = action.casefold().replace("-", "_")
-    for prefix, lvl in CLASS_LEVEL:
-        if a == prefix or a.startswith(prefix + "_") or a.startswith(prefix + ":"):
-            return lvl
-    return 4
+    words = re.split(r"[_:]+", a)                   # a leading separator leaves an empty first word, which is not a known class
+    known = dict(CLASS_LEVEL)
+    if not words or words[0] not in known:
+        return 4                                    # the action must START with a known class, else the top level
+    return max(known.get(w, 0) for w in words)      # "read_and_delete_all" is a delete: the highest class named anywhere wins
 
 
 def _mac(secret: bytes, body: dict) -> str:

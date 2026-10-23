@@ -101,6 +101,8 @@ class Liveness:
         if item is None or self._clock() >= item[1] or not isinstance(transcript, str):
             return False
         said = transcript.casefold().split()
+        if len(said) > 3 * len(item[0]) + 2:                                         # reading out the whole vocabulary would otherwise always contain the phrase
+            return False
         hits = sum(1 for w in item[0] if w in said)
         return hits / len(item[0]) >= self.need
 
