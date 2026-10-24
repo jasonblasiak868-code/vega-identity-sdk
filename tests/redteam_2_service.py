@@ -97,11 +97,13 @@ class Logins(unittest.TestCase):
     def test_phone_code_flow(self):
         r = Rig().full()
         lg = r.svc.login("alex")
+        self.assertFalse(lg.phone_start())                                              # no text goes out before a first factor has passed
+        self.assertTrue(lg.password(PASSWORD))
         self.assertTrue(lg.phone_start())
         code = re.search(r"code is (\d+)", r.sms[-1]).group(1)
         self.assertFalse(lg.phone_check("000000" if code != "000000" else "111111"))
         self.assertTrue(lg.phone_check(code))
-        self.assertEqual(lg.passed.keys(), {"phone"})
+        self.assertEqual(lg.passed.keys(), {"password", "phone"})
         no_phone = Rig()
         self.assertFalse(no_phone.svc.login("alex").phone_start())
 
@@ -132,17 +134,23 @@ class Logins(unittest.TestCase):
 
     def test_the_knowledge_quiz_and_its_limits(self):
         r = Rig().full()
-        lg = r.svc.login("alex")
+
+        def login():
+            lg_ = r.svc.login("alex")
+            self.assertIsNone(lg_.knowledge_start())                                     # no questions before a first factor has passed
+            self.assertTrue(lg_.password(PASSWORD))
+            return lg_
+        lg = login()
         qs = lg.knowledge_start()
         self.assertEqual(len(qs), 3)
         answers = {qid: "It was port %s" % ("k%03dq" % int(text.split("number ")[1].split("?")[0])) for qid, text in qs}
         self.assertTrue(lg.knowledge_finish(answers))
         for _ in range(2):
-            lg2 = r.svc.login("alex")
+            lg2 = login()
             self.assertIsNotNone(lg2.knowledge_start())
-        self.assertIsNone(r.svc.login("alex").knowledge_start())                       # three quiz starts an hour is the limit
+        self.assertIsNone(login().knowledge_start())                                    # three quiz starts an hour is the limit
         r.now["t"] += 3601
-        self.assertIsNotNone(r.svc.login("alex").knowledge_start())
+        self.assertIsNotNone(login().knowledge_start())
         lg3 = r.svc.login("alex")
         self.assertFalse(lg3.knowledge_finish({}))                                      # no quiz was started on this login
 

@@ -142,6 +142,7 @@ class ReplayUnderRace(unittest.TestCase):
     def test_parallel_wrong_phone_codes_are_counted_exactly(self):
         r = Rig().full()
         lg0 = r.svc.login("alex")
+        self.assertTrue(lg0.password(PASSWORD))
         self.assertTrue(lg0.phone_start())
         slow_record(r)
         cid = lg0._phone_cid

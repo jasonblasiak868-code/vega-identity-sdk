@@ -256,13 +256,13 @@ Identity.knowledge_bank(user) -> QuestionBank
 Identity.login(user) -> Login
 Login.password(text) -> bool
 Login.totp(code) -> bool
-Login.phone_start() -> bool
+Login.phone_start() -> bool   # only after a password, authenticator code or device key has passed in this login; before that it sends nothing and returns False
 Login.phone_check(code) -> bool
 Login.device_challenge() -> bytes|None
 Login.device_key(signature) -> bool
 Login.voice_challenge() -> str|None
 Login.voice_verify(audio) -> bool
-Login.knowledge_start() -> list[(qid, text)]|None
+Login.knowledge_start() -> list[(qid, text)]|None   # only after a password, authenticator code or device key has passed in this login; before that it shows no question, burns no quiz start, and returns None
 Login.knowledge_finish(answers) -> bool
 Login.assertion() -> dict|None
 IdentityRefused  # exception

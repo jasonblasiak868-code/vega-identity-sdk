@@ -32,5 +32,32 @@ class LivenessFlood(unittest.TestCase):
         self.assertFalse(lv.check(cid, "something else entirely"))
 
 
+class FirstFactorFirst(unittest.TestCase):
+    """Anyone who knew a username could read that person's private questions (each start burned one) or make the system text their phone, with no proof of who they were."""
+
+    def test_questions_and_text_codes_need_a_passed_first_factor(self):
+        import redteam_2_service as S
+        r = S.Rig().full()
+        sent = len(r.sms)
+        for _ in range(6):                                                           # a stranger trying again and again
+            stranger = r.svc.login("alex")
+            self.assertFalse(stranger.phone_start())
+            self.assertIsNone(stranger.knowledge_start())
+        self.assertEqual(len(r.sms), sent)                                           # nothing was texted
+        lg = r.svc.login("alex")
+        self.assertTrue(lg.password(S.PASSWORD))
+        self.assertIsNotNone(lg.knowledge_start())                                   # the strangers burned none of the hourly quiz starts
+        self.assertTrue(lg.phone_start())
+        self.assertEqual(len(r.sms), sent + 1)
+
+    def test_a_wrong_password_does_not_open_them(self):
+        import redteam_2_service as S
+        r = S.Rig().full()
+        lg = r.svc.login("alex")
+        self.assertFalse(lg.password("wrong wrong wrong"))
+        self.assertFalse(lg.phone_start())
+        self.assertIsNone(lg.knowledge_start())
+
+
 if __name__ == "__main__":
     unittest.main()

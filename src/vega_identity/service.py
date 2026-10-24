@@ -148,6 +148,9 @@ def _attempt(fn):
     return inner
 
 
+FIRST_FACTORS = ("password", "totp", "device_key")
+
+
 class Login:
     def __init__(self, svc: Identity, user: str):
         self.svc, self.user = svc, user
@@ -157,6 +160,11 @@ class Login:
 
     def _live(self) -> bool:
         return self.u is not None and not self.svc._locked(self.u)
+
+    def _has_first_factor(self) -> bool:
+        """A password, an authenticator code or the device key has already passed in this login. The private questions and the SMS code are only offered after one of them: before that,
+        anyone who knows a username could read that person's questions (each use burns one) or make the system text their phone."""
+        return any(f in self.passed for f in FIRST_FACTORS)
 
     def _pass(self, factor) -> bool:
         if not self.svc._event("ID_FACTOR_OK", self.user, factor=factor):
@@ -189,7 +197,7 @@ class Login:
 
     @_attempt
     def phone_start(self) -> bool:
-        if not self._live() or not self.u["phone"]:
+        if not self._live() or not self.u["phone"] or not self._has_first_factor():
             return False
         try:
             self._phone_cid = self.svc.phones.start(self.user, self.u["phone"])
@@ -235,7 +243,7 @@ class Login:
 
     @_attempt
     def knowledge_start(self):
-        if not self._live() or self.u["bank"] is None or not self.u["bank"].available():
+        if not self._live() or not self._has_first_factor() or self.u["bank"] is None or not self.u["bank"].available():
             return None
         now = self.svc._clock()
         self.u["quiz_starts"] = [t for t in self.u["quiz_starts"] if now - t < 3600]
