@@ -1,0 +1,15 @@
+{
+ "pack": "PACK-GOVERNANCE-SPINE",
+ "repo": "vega-identity-sdk",
+ "members": [
+  "vega-umbrella-sdk",
+  "vega-council-sdk",
+  "vega-identity-sdk",
+  "vega-jurisdiction-sdk",
+  "vega-governance-feed-sdk"
+ ],
+ "requires": [],
+ "dkg_anchor": "DKG-REPO-PACKS-20261113",
+ "version": "v0.1",
+ "disclosed": "2026-11-13"
+}
